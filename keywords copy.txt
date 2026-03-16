@@ -1,0 +1,13 @@
+1. LLM agent for biology
+** AI agent **
+** literature information extract **
+
+2. knowledge graph
+** knowledge graph **
+
+3. prompt engineering
+** chain-of-thought **
+** prompt evaluation **
+
+4. new model framework
+** diffusion model **

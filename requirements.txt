@@ -4,5 +4,8 @@ feedparser>=6.0.0
 requests>=2.28.0
 schedule>=1.2.0
 
+# PDF 读取依赖
+pdfminer.six>=20221105
+
 # 邮件发送依赖（通常Python内置，无需额外安装）
 # email 模块是 Python 标准库的一部分

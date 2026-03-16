@@ -5,234 +5,27 @@
 """
 
 import os
-import json
 import logging
-import requests
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
+from llm_client import LLMConfig, LLMClient
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class LLMConfig:
-    """LLM 配置"""
-    api_key: str
-    model: str
-    api_url: str
-    temperature: float = 0.3
-    max_tokens: int = 1000
 
 
 class LLMFilter:
     """大模型论文筛选器"""
     
-    # 预设的 API 地址
-    DEFAULT_APIS = {
-        'openai': 'https://api.openai.com/v1/chat/completions',
-        'deepseek': 'https://api.deepseek.com/v1/chat/completions',
-        'moonshot': 'https://api.moonshot.cn/v1/chat/completions',
-        'zhipu': 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-        'gemini': 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
-        'claude': 'https://api.anthropic.com/v1/messages',
-        'minimax': 'https://api.minimaxi.com/anthropic',
-    }
-    
     def __init__(self, config: LLMConfig, delay: float = 2.0, max_retries: int = 3):
         self.config = config
         self.delay = delay  # 请求之间的延迟（秒）
         self.max_retries = max_retries  # 最大重试次数
-        self.session = requests.Session()
-        self.session.headers.update({
-            'Authorization': f'Bearer {config.api_key}',
-            'Content-Type': 'application/json'
-        })
-    
-    def _get_api_url(self) -> str:
-        """获取 API 地址"""
-        url = self.config.api_url
-        # 如果是预设的简称，转换为完整 URL
-        if url.lower() in self.DEFAULT_APIS:
-            url = self.DEFAULT_APIS[url.lower()]
-        # 替换 URL 中的 {model} 占位符
-        if '{model}' in url:
-            url = url.replace('{model}', self.config.model)
-        return url
+        self.llm_client = LLMClient(config, delay, max_retries)
     
     def _call_llm(self, prompt: str) -> str:
         """调用大模型 API"""
-        try:
-            url = self._get_api_url()
-            
-            # 判断 API 类型，构建对应的 payload 和 headers
-            if 'generativelanguage.googleapis.com' in url:
-                # Gemini API 格式
-                return self._call_gemini(url, prompt)
-            elif 'anthropic.com' in url:
-                # Claude API 格式
-                return self._call_claude(url, prompt)
-            elif 'minimax.chat' in url:
-                # MiniMax API 格式
-                return self._call_minimax(url, prompt)
-            else:
-                # OpenAI 兼容格式
-                return self._call_openai_compatible(url, prompt)
-            
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"LLM API HTTP 错误: {e}")
-            if e.response is not None:
-                logger.error(f"响应状态码: {e.response.status_code}")
-                logger.error(f"响应内容: {e.response.text[:500]}")
-            return ''
-        except Exception as e:
-            logger.error(f"LLM API 调用失败: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return ''
-    
-    def _call_openai_compatible(self, url: str, prompt: str) -> str:
-        """调用 OpenAI 兼容格式的 API"""
-        payload = {
-            'model': self.config.model,
-            'messages': [
-                {'role': 'system', 'content': '你是一个学术论文分析专家，擅长判断论文与特定研究领域的相关性。'},
-                {'role': 'user', 'content': prompt}
-            ],
-            'temperature': self.config.temperature,
-            'max_tokens': self.config.max_tokens
-        }
-        
-        response = self.session.post(url, json=payload, timeout=60)
-        response.raise_for_status()
-        
-        result = response.json()
-        
-        # 适配不同 API 的返回格式
-        if result.get('choices') and len(result['choices']) > 0:
-            choice = result['choices'][0]
-            if choice and 'message' in choice:
-                return choice['message'].get('content', '')
-            elif choice and 'text' in choice:
-                return choice['text']
-        
-        # 检查是否有错误信息
-        if 'error' in result:
-            logger.error(f"LLM API 返回错误: {result['error']}")
-        
-        logger.warning(f"无法解析 LLM 响应: {result}")
-        return ''
-    
-    def _call_gemini(self, url: str, prompt: str) -> str:
-        """调用 Gemini API"""
-        # Gemini 使用 API Key 作为查询参数
-        api_key = self.config.api_key
-        url = f"{url}?key={api_key}"
-        
-        payload = {
-            'contents': [
-                {
-                    'parts': [
-                        {'text': '你是一个学术论文分析专家，擅长判断论文与特定研究领域的相关性。'},
-                        {'text': prompt}
-                    ]
-                }
-            ],
-            'generationConfig': {
-                'temperature': self.config.temperature,
-                'maxOutputTokens': self.config.max_tokens
-            }
-        }
-        
-        # Gemini 不需要 Authorization header，使用 API key 作为参数
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        
-        response = requests.post(url, json=payload, headers=headers, timeout=60)
-        response.raise_for_status()
-        
-        result = response.json()
-        
-        # 解析 Gemini 响应格式
-        if 'candidates' in result and len(result['candidates']) > 0:
-            candidate = result['candidates'][0]
-            if 'content' in candidate and 'parts' in candidate['content']:
-                parts = candidate['content']['parts']
-                if parts and 'text' in parts[0]:
-                    return parts[0]['text']
-        
-        logger.warning(f"无法解析 Gemini 响应: {result}")
-        return ''
-    
-    def _call_claude(self, url: str, prompt: str) -> str:
-        """调用 Claude API"""
-        payload = {
-            'model': self.config.model,
-            'max_tokens': self.config.max_tokens,
-            'temperature': self.config.temperature,
-            'system': '你是一个学术论文分析专家，擅长判断论文与特定研究领域的相关性。',
-            'messages': [
-                {'role': 'user', 'content': prompt}
-            ]
-        }
-        
-        # Claude 使用 x-api-key header
-        headers = {
-            'Content-Type': 'application/json',
-            'x-api-key': self.config.api_key,
-            'anthropic-version': '2023-06-01'
-        }
-        
-        response = requests.post(url, json=payload, headers=headers, timeout=60)
-        response.raise_for_status()
-        
-        result = response.json()
-        
-        # 解析 Claude 响应格式
-        if 'content' in result and len(result['content']) > 0:
-            return result['content'][0].get('text', '')
-        
-        logger.warning(f"无法解析 Claude 响应: {result}")
-        return ''
-    
-    def _call_minimax(self, url: str, prompt: str) -> str:
-        """调用 MiniMax API"""
-        # MiniMax 使用特殊的 header 格式
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.config.api_key}'
-        }
-        
-        payload = {
-            'model': self.config.model,
-            'messages': [
-                {'role': 'system', 'content': '你是一个学术论文分析专家，擅长判断论文与特定研究领域的相关性。'},
-                {'role': 'user', 'content': prompt}
-            ],
-            'temperature': self.config.temperature,
-            'max_tokens': self.config.max_tokens
-        }
-        
-        response = requests.post(url, json=payload, headers=headers, timeout=60)
-        response.raise_for_status()
-        
-        result = response.json()
-        
-        # 检查错误
-        if result.get('base_resp') and result['base_resp'].get('status_code') != 0:
-            logger.error(f"MiniMax API 错误: {result['base_resp']}")
-            return ''
-        
-        # 解析 MiniMax 响应格式
-        if 'choices' in result and result['choices']:
-            choice = result['choices'][0]
-            if 'message' in choice:
-                return choice['message'].get('content', '')
-            elif 'text' in choice:
-                return choice['text']
-        
-        logger.warning(f"无法解析 MiniMax 响应: {result}")
-        return ''
+        system_prompt = '你是一个学术论文分析专家，擅长判断论文与特定研究领域的相关性。'
+        return self.llm_client.call_llm(prompt, system_prompt)
     
     def evaluate_relevance(self, paper_title: str, paper_summary: str, keywords: List[str]) -> Tuple[float, str]:
         """

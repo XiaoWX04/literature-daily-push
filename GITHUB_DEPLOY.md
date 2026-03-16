@@ -108,7 +108,7 @@ git commit -m "Initial commit"
 git remote add origin git@github.com:你的用户名/arxiv-daily-push.git
 
 # 如果使用 HTTPS，命令如下（不推荐）：
-# git remote add origin https://github.com/你的用户名/arxiv-daily-push.git
+# git remote add origin https://github.com:你的用户名/arxiv-daily-push.git
 
 # 推送代码
 git branch -M main
@@ -147,12 +147,12 @@ git remote -v
 | Secret 名称 | 说明 | 默认值 |
 |------------|------|--------|
 | `SMTP_HOST` | SMTP 服务器 | 自动检测 |
-| `SMTP_PORT` | SMTP 端口 | `465` |
-| `USE_SSL` | 使用 SSL | `true` |
-| `USE_TLS` | 使用 TLS | `false` |
-| `MAX_PAPERS` | 每天最大推送数 | `30` |
-| `DAYS_BACK` | 搜索最近几天的文章 | `7` |
-| `MIN_SCORE` | 最小相关性阈值 | `1.0` |
+| `SMTP_PORT` | SMTP 端口 | `587` |
+| `USE_SSL` | 使用 SSL | `false` |
+| `USE_TLS` | 使用 TLS | `true` |
+| `DAYS_BACK` | 搜索最近几天的文章 | `30` |
+| `SEARCH_SOURCE` | 搜索源 | `arxiv` |
+| `SORT_BY` | 排序方式 | `submittedDate` |
 
 ### 5. 授权码获取方法
 
@@ -225,6 +225,35 @@ schedule:
 
 ---
 
+## 🌟 新增功能说明
+
+### PDF 全文读取与总结
+
+系统现在支持：
+- 自动下载论文 PDF
+- 提取全文文本内容
+- 使用 LLM 生成论文总结（关键点、研究方法、结论、局限性）
+
+### LLM 智能筛选
+
+支持多个 LLM 服务商：
+- 阿里云 DashScope (qwen3.5-flash, tongyi-xiaomi-analysis-pro)
+- OpenAI (GPT-3.5, GPT-4)
+- DeepSeek (deepseek-chat)
+- Moonshot (Kimi)
+- Google Gemini
+- Anthropic Claude
+
+### 多源搜索
+
+支持多个学术搜索源：
+- **multi**: 多源合并（推荐）
+- **arxiv**: 官方 arXiv
+- **semantic_scholar**: Semantic Scholar
+- **openalex**: OpenAlex
+
+---
+
 ## 🔧 高级配置
 
 ### 自定义定时规则
@@ -252,9 +281,9 @@ EMAIL_RECEIVERS: your_qq@qq.com,your_gmail@gmail.com,your_163@163.com
 ### 自定义搜索参数
 
 添加 Secrets：
-- `MAX_PAPERS`: 每天最多推送多少篇（默认30）
-- `DAYS_BACK`: 搜索最近几天的文章（默认7天）
-- `MIN_SCORE`: 最小相关性阈值（默认1.0）
+- `DAYS_BACK`: 搜索最近几天的文章（默认30天）
+- `SEARCH_SOURCE`: 搜索源 (multi/arxiv/semantic_scholar/openalex)
+- `SORT_BY`: 排序方式 (submittedDate/relevance)
 
 ### 启用/禁用邮件
 
@@ -273,9 +302,14 @@ EMAIL_RECEIVERS: your_qq@qq.com,your_gmail@gmail.com,your_163@163.com
 │       └── arxiv_daily.yml    # GitHub Actions 工作流
 ├── arxiv_agent.py              # 主程序
 ├── email_sender.py             # 邮件发送模块
+├── llm_client.py               # LLM 客户端（统一接口）
+├── llm_filter.py               # LLM 论文筛选模块
+├── paper_summarizer.py         # 论文全文总结模块
+├── pdf_reader.py               # PDF 读取模块
+├── scholar_searcher.py         # 多源学术搜索模块
 ├── keywords.txt                # 关键词配置
-├── config.yaml                 # 基础配置（本地使用，不提交敏感信息）
-├── config.example.yaml         # 配置模板（可安全提交）
+├── config.yaml                 # 基础配置（本地使用）
+├── config.example.yaml         # 配置模板
 ├── requirements.txt            # Python 依赖
 ├── paper_history.json          # 文章历史（自动创建，用于去重）
 └── daily_papers/               # 报告输出目录

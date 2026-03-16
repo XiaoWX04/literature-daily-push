@@ -2,7 +2,7 @@
 """
 arXiv 每日文章推送智能体
 分块筛选策略：
-- 两大主题（产业组织、航运环境）
+- 两大主题
 - 每主题分核心关键词（引用前N篇）和扩展关键词（引用前M篇）
 - 数量可配置
 """
@@ -28,9 +28,10 @@ try:
 except ImportError:
     EMAIL_AVAILABLE = False
 
-# 导入 LLM 筛选模块
+# 导入 LLM 相关模块
 try:
-    from llm_filter import LLMFilter, LLMConfig, load_llm_config_from_env
+    from llm_client import LLMConfig, LLMClient
+    from llm_filter import LLMFilter, load_llm_config_from_env
     LLM_AVAILABLE = True
 except ImportError:
     LLM_AVAILABLE = False
@@ -41,6 +42,20 @@ try:
     SCHOLAR_AVAILABLE = True
 except ImportError:
     SCHOLAR_AVAILABLE = False
+
+# 导入 PDF 读取模块
+try:
+    from pdf_reader import PDFReader
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+# 导入论文总结模块
+try:
+    from paper_summarizer import PaperSummarizer
+    SUMMARIZER_AVAILABLE = True
+except ImportError:
+    SUMMARIZER_AVAILABLE = False
 
 # 配置日志
 logging.basicConfig(
@@ -66,6 +81,8 @@ class Paper:
     matched_keywords: List[str] = field(default_factory=list)
     source_block: str = ""  # 来源主题块
     keyword_type: str = ""  # core 或 extended
+    full_text: str = ""  # 全文文本
+    paper_summary: dict = field(default_factory=dict)  # 论文总结
     
     def to_dict(self) -> Dict:
         return {
@@ -81,7 +98,9 @@ class Paper:
             'citation_count': self.citation_count,
             'matched_keywords': self.matched_keywords,
             'source_block': self.source_block,
-            'keyword_type': self.keyword_type
+            'keyword_type': self.keyword_type,
+            'full_text': self.full_text[:100] + '...' if len(self.full_text) > 100 else self.full_text,
+            'paper_summary': self.paper_summary
         }
 
 
@@ -100,60 +119,8 @@ class KeywordBlock:
     def _generate_queries(self) -> List[str]:
         """生成英文搜索查询"""
         translations = {
-            # 产业组织
-            '空调市场': 'air conditioner market',
-            'air conditioner market': 'air conditioner market',
-            '电动汽车市场': 'electric vehicle market',
-            'electric vehicle market': 'electric vehicle market',
-            '电车市场': 'EV market',
-            '耐用消费品': 'durable goods',
-            '实证产业组织': 'empirical industrial organization',
-            '实证 io': 'empirical IO',
-            '市场结构': 'market structure',
-            '产品差异化': 'product differentiation',
-            '需求估计': 'demand estimation',
-            '供给行为': 'supply behavior',
-            '定价策略': 'pricing strategy',
-            '市场势力': 'market power',
-            '福利分析': 'welfare analysis',
-            '家电市场': 'appliance market',
-            '新能源汽车市场': 'new energy vehicle market',
-            '离散选择模型': 'discrete choice model',
-            'blp 模型': 'BLP',
-            'blp': 'BLP',
-            '结构估计': 'structural estimation',
-            '寡头竞争': 'oligopoly competition',
-            '纵向关系': 'vertical relationship',
-            '技术创新': 'technological innovation',
-            '政策评估': 'policy evaluation',
-            '消费行为': 'consumer behavior',
-            # 航运相关
-            '北极航道': 'Arctic shipping',
-            '北极航线': 'Arctic shipping',
-            '北极航运': 'Arctic shipping',
-            '全球航运贸易': 'global shipping trade',
-            '全球海运贸易': 'global maritime trade',
-            '海运碳排放': 'maritime carbon emission',
-            '海洋碳排放': 'maritime carbon emission',
-            '航运减排': 'shipping emission reduction',
-            '船舶碳排放': 'vessel carbon emission',
-            '船舶排放': 'vessel emission',
-            '碳减排政策': 'carbon reduction policy',
-            '航运碳足迹': 'shipping carbon footprint',
-            '绿色航运': 'green shipping',
-            '气候影响': 'climate impact',
-            '国际海运': 'international shipping',
-            '海运贸易格局': 'maritime trade pattern',
-            '航运贸易': 'shipping trade',
-            '碳税': 'carbon tax',
-            '碳市场': 'carbon market',
-            '船舶能效': 'ship energy efficiency',
-            '低碳航运': 'low carbon shipping',
-            '北极环境影响': 'Arctic environmental impact',
-            '贸易路线优化': 'trade route optimization',
-            '航线优化': 'route optimization',
-            '可持续航运': 'sustainable shipping',
-            '可持续海运': 'sustainable maritime',
+            # AI Agent
+            "知识图谱" : "knowledge graph"
         }
         
         queries = set()
@@ -174,7 +141,7 @@ class KeywordBlock:
             elif kw_clean in translations:
                 queries.add(translations[kw_clean])
         
-        return list(queries) if queries else ['industrial organization', 'shipping']
+        return list(queries) if queries else ['agent for biology', 'knowledge graph']
 
 
 class KeywordManager:
@@ -430,8 +397,8 @@ class ArxivAgent:
             except Exception as e:
                 logger.error(f"邮件发送器初始化失败: {e}")
         
-        # LLM 筛选器
-        self.llm_filter: Optional[LLMFilter] = None
+        # LLM 客户端
+        self.llm_client: Optional[LLMClient] = None
         if LLM_AVAILABLE and self.config.get('llm', {}).get('enabled', False):
             try:
                 llm_config = LLMConfig(
@@ -444,10 +411,37 @@ class ArxivAgent:
                 # 获取延迟和重试配置（Gemini 建议延迟至少 2 秒）
                 delay = self.config['llm'].get('delay', 2.0)
                 max_retries = self.config['llm'].get('max_retries', 3)
-                self.llm_filter = LLMFilter(llm_config, delay=delay, max_retries=max_retries)
-                logger.info(f"✅ LLM 筛选功能已启用 (模型: {llm_config.model}, 延迟: {delay}s)")
+                self.llm_client = LLMClient(llm_config, delay=delay, max_retries=max_retries)
+                logger.info(f"✅ LLM 客户端已初始化 (模型: {llm_config.model}, 延迟: {delay}s)")
+            except Exception as e:
+                logger.error(f"LLM 客户端初始化失败: {e}")
+        
+        # LLM 筛选器
+        self.llm_filter: Optional[LLMFilter] = None
+        if self.llm_client:
+            try:
+                self.llm_filter = LLMFilter(self.llm_client.config, self.llm_client.delay, self.llm_client.max_retries)
+                logger.info("✅ LLM 筛选功能已启用")
             except Exception as e:
                 logger.error(f"LLM 筛选器初始化失败: {e}")
+        
+        # PDF 读取器
+        self.pdf_reader: Optional[PDFReader] = None
+        if PDF_AVAILABLE:
+            try:
+                self.pdf_reader = PDFReader()
+                logger.info("✅ PDF 读取功能已启用")
+            except Exception as e:
+                logger.error(f"PDF 读取器初始化失败: {e}")
+        
+        # 论文总结器
+        self.paper_summarizer: Optional[PaperSummarizer] = None
+        if SUMMARIZER_AVAILABLE and self.llm_client:
+            try:
+                self.paper_summarizer = PaperSummarizer(self.llm_client)
+                logger.info("✅ 论文总结功能已启用")
+            except Exception as e:
+                logger.error(f"论文总结器初始化失败: {e}")
         
         # 去重存储
         self.seen_ids: Set[str] = set()
@@ -766,6 +760,10 @@ class ArxivAgent:
             
             logger.info(f"LLM 筛选后剩余 {len(all_selected_papers)} 篇文章")
         
+        # 处理PDF读取和论文总结
+        if all_selected_papers:
+            all_selected_papers = self._process_papers_with_pdf(all_selected_papers)
+        
         # 打印最终选中的文章
         logger.info("\n最终选中的文章列表:")
         for i, paper in enumerate(all_selected_papers, 1):
@@ -840,21 +838,80 @@ class ArxivAgent:
             for block_name, block_papers in block_groups.items():
                 f.write(f"## {block_name}\n\n")
                 
-                # 再按核心/扩展分组
-                core_papers = [p for p in block_papers if p.keyword_type == 'core']
-                ext_papers = [p for p in block_papers if p.keyword_type == 'extended']
-                
-                if core_papers:
-                    f.write(f"### 核心关键词匹配 ({len(core_papers)}篇)\n\n")
-                    self._write_paper_list(f, core_papers)
-                
-                if ext_papers:
-                    f.write(f"### 扩展关键词匹配 ({len(ext_papers)}篇)\n\n")
-                    self._write_paper_list(f, ext_papers)
+                # 处理所有匹配的论文
+                if block_papers:
+                    f.write(f"### 匹配论文 ({len(block_papers)}篇)\n\n")
+                    self._write_paper_list(f, block_papers)
             
             f.write("\n*由 arXiv Agent 自动生成*\n")
         
         return filepath
+    
+    def _process_papers_with_pdf(self, papers: List[Paper]) -> List[Paper]:
+        """处理论文的PDF读取和总结"""
+        if not papers:
+            return papers
+        
+        if not self.pdf_reader or not self.paper_summarizer:
+            logger.warning("PDF 读取或总结功能未启用")
+            return papers
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"开始处理 {len(papers)} 篇论文的PDF和总结...")
+        logger.info(f"{'='*60}")
+        
+        # 获取所有关键词
+        all_keywords = []
+        for block in self.keyword_manager.blocks:
+            all_keywords.extend(block.all_keywords)
+        
+        processed_papers = []
+        for i, paper in enumerate(papers, 1):
+            logger.info(f"处理第 {i}/{len(papers)} 篇: {paper.title[:50]}...")
+            
+            try:
+                # 读取PDF全文
+                if paper.pdf_link:
+                    full_text = self.pdf_reader.get_pdf_text(paper.pdf_link)
+                    if full_text:
+                        paper.full_text = full_text
+                        logger.info(f"  PDF 读取成功，长度: {len(full_text)} 字符")
+                        
+                        # 生成总结
+                        summary_result = self.paper_summarizer.summarize_paper(
+                            paper.title, 
+                            full_text, 
+                            all_keywords
+                        )
+                        if summary_result:
+                            paper.paper_summary = {
+                                'summary': summary_result.summary,
+                                'key_points': summary_result.key_points,
+                                'methodology': summary_result.methodology,
+                                'conclusions': summary_result.conclusions,
+                                'limitations': summary_result.limitations,
+                                'score': summary_result.score
+                            }
+                            logger.info(f"  论文总结生成成功，评分: {summary_result.score:.1f}/10")
+                        else:
+                            logger.warning("  论文总结生成失败")
+                    else:
+                        logger.warning("  PDF 读取失败")
+                else:
+                    logger.warning("  没有PDF链接")
+                
+                processed_papers.append(paper)
+                
+            except Exception as e:
+                logger.error(f"  处理失败: {e}")
+                processed_papers.append(paper)
+            
+            # 延迟，避免API限制
+            import time
+            time.sleep(1)
+        
+        logger.info(f"PDF和总结处理完成，共处理 {len(processed_papers)} 篇论文")
+        return processed_papers
     
     def _write_paper_list(self, f, papers: List[Paper]):
         """写入论文列表"""
@@ -885,6 +942,34 @@ class ArxivAgent:
             if len(paper.summary) > 600:
                 summary += "..."
             f.write(f"> **摘要**: {summary}\n\n")
+            
+            # 显示论文总结
+            if paper.paper_summary:
+                f.write("### 📝 论文总结\n\n")
+                f.write(f"> {paper.paper_summary.get('summary', '')}\n\n")
+                
+                key_points = paper.paper_summary.get('key_points', [])
+                if key_points:
+                    f.write("#### 关键点\n\n")
+                    for j, point in enumerate(key_points, 1):
+                        f.write(f"{j}. {point}\n")
+                    f.write("\n")
+                
+                methodology = paper.paper_summary.get('methodology', '')
+                if methodology:
+                    f.write("#### 研究方法\n\n")
+                    f.write(f"> {methodology}\n\n")
+                
+                conclusions = paper.paper_summary.get('conclusions', '')
+                if conclusions:
+                    f.write("#### 结论\n\n")
+                    f.write(f"> {conclusions}\n\n")
+                
+                limitations = paper.paper_summary.get('limitations', '')
+                if limitations:
+                    f.write("#### 局限性\n\n")
+                    f.write(f"> {limitations}\n\n")
+            
             f.write("---\n\n")
 
 

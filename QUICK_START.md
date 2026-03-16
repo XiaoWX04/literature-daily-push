@@ -89,27 +89,24 @@ git push -u origin main
 
 2. **配置邮箱**
    ```bash
-   # 复制示例配置
-   cp config.example.yaml config.yaml
-   
    # 编辑 config.yaml，填入邮箱和授权码
+   # 确保 email.enabled: true
    ```
 
 3. **运行测试**
    ```bash
+   # 测试邮件配置
    python test_email.py
-   ```
 
-4. **开始推送**
-   ```bash
+   # 运行主程序
    python arxiv_agent.py
    ```
 
-5. **（可选）设置定时任务**
+4. **（可选）设置定时任务**
    ```bash
    # Windows
    ./setup_windows_task.ps1
-   
+
    # 或使用 Python 调度器
    python scheduler.py
    ```
@@ -125,6 +122,25 @@ git push -u origin main
 | 稳定性 | **云端稳定** | 依赖本地环境 |
 | 配置难度 | 中等 | 简单 |
 | 适合场景 | 长期使用 | 测试调试 |
+
+---
+
+## 🌟 新增功能
+
+### PDF 全文读取
+- 自动下载论文 PDF
+- 提取全文文本内容
+- 支持长文本处理（自动截断）
+
+### 论文自动总结
+- 使用 LLM 对论文全文进行深度总结
+- 提取关键点、研究方法、结论、局限性
+- JSON 格式输出，易于解析
+
+### 多源搜索
+- 支持 arXiv、Semantic Scholar、OpenAlex
+- 多源结果合并去重
+- 更全面的论文覆盖
 
 ---
 
@@ -151,11 +167,11 @@ git push -u origin main
    # Windows (Git Bash)
    eval "$(ssh-agent -s)"
    ssh-add ~/.ssh/id_rsa
-   
+
    # Mac
    eval "$(ssh-agent -s)"
    ssh-add -K ~/.ssh/id_rsa
-   
+
    # Linux
    eval "$(ssh-agent -s)"
    ssh-add ~/.ssh/id_rsa
@@ -177,20 +193,13 @@ git push -u origin main
    ```bash
    # 查看当前远程地址
    git remote -v
-   
+
    # 切换为 SSH
    git remote set-url origin git@github.com:用户名/仓库名.git
-   
+
    # 验证
    git remote -v
    ```
-
----
-
-## 🎯 推荐方案
-
-- **新用户**：先用本地运行测试配置，确认能收到邮件后再部署到 GitHub
-- **长期使用**：直接部署到 GitHub Actions，一劳永逸
 
 ---
 
@@ -213,7 +222,7 @@ git push -u origin main
 1. 查看 [GITHUB_DEPLOY.md](GITHUB_DEPLOY.md) 详细部署文档
 2. 查看 [README.md](README.md) 完整使用说明
 3. 检查 Actions 日志中的错误信息
-4. 使用 `test_email.py` 或 `--test-email` 测试邮件配置
+4. 使用 `test_email.py` 测试邮件配置
 
 ---
 

@@ -1,44 +1,4 @@
-1. Air conditioning market / electric vehicle market / durable consumer goods: empirical industrial organization research
-**Air conditioning market**
-**Electric vehicle market / Electric car market**
-**Durable consumer goods**
-**Empirical industrial organization**
-**Empirical IO**
-**market structure**
-**Product differentiation**
-**Demand estimation**
-**Supply behavior**
-**pricing strategy**
-**Market power**
-**Benefit analysis**
-home appliance market
-New energy vehicle market
-Discrete choice model
-BLP model
-structural estimation
-Oligopolistic competition
-Vertical relationship
-technological innovation
-Policy evaluation
-consumer behavior
+1. prompt engineering
+** chain-of-thought **
+** prompt evaluation **
 
-II. Arctic Shipping Routes / Carbon Emissions and Reduction in Global Shipping and Trade
-**Arctic shipping route**
-**Arctic shipping**
-**Global shipping trade**
-**Maritime carbon emissions**
-**Emission reduction in shipping**
-**Ship carbon emissions**
-**Carbon emission reduction policy**
-**Shipping carbon footprint**
-**Green shipping**
-**Climate impact**
-International Ocean Freight
-Maritime trade pattern
-carbon tax
-carbon market
-Ship energy efficiency
-Low-carbon shipping
-Environmental impact of the Arctic
-Trade route optimization
-Sustainable shipping

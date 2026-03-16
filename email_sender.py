@@ -135,20 +135,14 @@ class EmailSender:
         """生成 HTML 格式邮件内容"""
         
         # 按主题分组
-        groups = {
-            '产业组织与市场': [],
-            '航运与环境': [],
-            '其他相关文章': []
-        }
+        groups = {}
         
+        # 优先使用论文的 source_block 作为分组
         for paper in papers:
-            matched_text = ' '.join(paper.matched_keywords).lower()
-            if any(kw in matched_text for kw in ['航运', '碳', 'ship', 'carbon', 'arctic', 'maritime', '绿色', 'green']):
-                groups['航运与环境'].append(paper)
-            elif any(kw in matched_text for kw in ['市场', '产业', '竞争', '定价', 'market', 'industr', 'competition', '需求', '供给']):
-                groups['产业组织与市场'].append(paper)
-            else:
-                groups['其他相关文章'].append(paper)
+            group_name = getattr(paper, 'source_block', '其他相关文章')
+            if group_name not in groups:
+                groups[group_name] = []
+            groups[group_name].append(paper)
         
         # 生成 HTML
         html = f"""<!DOCTYPE html>
@@ -214,6 +208,33 @@ class EmailSender:
                 if paper.citation_count > 0:
                     meta_line += f'<span style="color: #28a745; font-weight: 600;">📈 被引 {paper.citation_count} 次</span>'
                 
+                # 添加论文总结
+                summary_html = ''
+                if hasattr(paper, 'paper_summary') and paper.paper_summary:
+                    summary_html = '<div class="summary" style="margin-top: 10px;"><strong>📝 论文总结:</strong><br>'
+                    summary_html += paper.paper_summary.get('summary', '') + '<br>'
+                    
+                    key_points = paper.paper_summary.get('key_points', [])
+                    if key_points:
+                        summary_html += '<br><strong>关键点:</strong><ul style="margin: 5px 0 0 20px;">'
+                        for point in key_points[:3]:  # 只显示前3个关键点
+                            summary_html += f'<li>{point}</li>'
+                        summary_html += '</ul>'
+                    
+                    methodology = paper.paper_summary.get('methodology', '')
+                    if methodology:
+                        summary_html += '<br><strong>研究方法:</strong><br>' + methodology + '<br>'
+                    
+                    conclusions = paper.paper_summary.get('conclusions', '')
+                    if conclusions:
+                        summary_html += '<br><strong>结论:</strong><br>' + conclusions + '<br>'
+                    
+                    limitations = paper.paper_summary.get('limitations', '')
+                    if limitations:
+                        summary_html += '<br><strong>局限性:</strong><br>' + limitations + '<br>'
+                    
+                    summary_html += '</div>'
+                
                 html += f"""
         <div class="paper">
             <div class="paper-title">{paper_num}. {paper.title}</div>
@@ -222,6 +243,7 @@ class EmailSender:
             </div>
             <div>{keywords_html}</div>
             <div class="summary">{summary}</div>
+            {summary_html}
             <div class="links">
                 <a href="{paper.link}" target="_blank">查看详情</a>
                 <a href="{paper.pdf_link}" target="_blank">下载 PDF</a>
@@ -260,6 +282,14 @@ class EmailSender:
                 text += f"   被引: {paper.citation_count} 次\n"
             text += f"   链接: {paper.link}\n"
             text += f"   PDF: {paper.pdf_link}\n"
+            
+            # 添加论文总结
+            if hasattr(paper, 'paper_summary') and paper.paper_summary:
+                text += "   论文总结: " + paper.paper_summary.get('summary', '')[:200] + "...\n"
+                key_points = paper.paper_summary.get('key_points', [])
+                if key_points:
+                    text += "   关键点: " + ", ".join(key_points[:2]) + "...\n"
+            
             text += "\n"
         
         text += "\n由 arXiv Agent 自动生成\n"
