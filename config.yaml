@@ -7,25 +7,27 @@
 keywords_file: keywords.txt
 
 # 搜索最近几天的文章
-days_back: 30
+days_back: 365
 
-# 搜索源: 'multi'(多源，推荐), 'arxiv', 'semantic_scholar', 'openalex'
+# 搜索源: 'multi'(多源，推荐), 'arxiv', 'biorxiv', 'openalex', 'pubmed'
 # multi: 同时使用多个搜索源，结果更全面
 # arxiv: 仅使用 arXiv
-# semantic_scholar: 仅使用 Semantic Scholar
+# biorxiv: 仅使用 bioRxiv
 # openalex: 仅使用 OpenAlex
-search_source: arxiv
+# pubmed: 仅使用 PubMed（生物医学领域）
+search_source: multi
 
 # 搜索排序方式: 'relevance'(相关性) 或 'submittedDate'(提交日期，最新优先)
 # 日常使用推荐 'submittedDate'，每天获取最新文章
 sort_by: relevance
 
 # 多源搜索配置（可选）
-semantic_scholar_key: ""  # Semantic Scholar API Key（可选，可提高限制）
-openalex_email: ""        # 你的邮箱（OpenAlex 建议使用，会被添加到 User-Agent）
+openalex_email: "2200012279@stu.pku.edu.cn"        # 你的邮箱（OpenAlex 建议使用，会被添加到 User-Agent）
+pubmed_email: "xiaowenxuanxwx@gmail.com"          # 你的邮箱（PubMed 建议使用）
+pubmed_api_key: "3adee234aa5c2725acf0ae4223e4c6ea6009"                                  # PubMed API Key（可选，有 API Key 可以提高请求限制）
 
 # 每次查询的最大结果数
-max_results_per_query: 100
+max_results_per_query: 30
 
 # 输出目录
 output_dir: daily_papers
@@ -54,7 +56,7 @@ llm:
   # Gemini: gemini-pro, gemini-1.5-flash
   # Claude: claude-3-sonnet-20240229, claude-3-opus-20240229
   # Dashscope: qwen3.5-flash, qwen3.5-plus
-  model: "tongyi-xiaomi-analysis-pro"
+  model: "glm-5"
   # 服务商：openai, deepseek, moonshot, gemini, claude, minimax, dashscope, 或自定义URL
   api_url: "dashscope"
   temperature: 0.3
@@ -62,7 +64,7 @@ llm:
   max_tokens: 2000
   min_score: 5.0          # 最低相关性分数（0-10），低于此分数的文章会被过滤
   top_n: 30               # 最多选取前N篇（按LLM评分排序），不设置则不过滤数量
-  delay: 2.0              # 请求间隔（秒），避免触发 API 速率限制，Gemini 建议 2 秒以上
+  delay: 3.0              # 请求间隔（秒），避免触发 API 速率限制，Gemini 建议 2 秒以上
   max_retries: 3          # 请求失败时的最大重试次数
 
 

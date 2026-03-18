@@ -38,7 +38,7 @@ except ImportError:
 
 # 导入多源学术搜索模块
 try:
-    from scholar_searcher import MultiSourceSearcher, Paper as ScholarPaper
+    from multi_searcher import MultiSourceSearcher, Paper, ArxivSearcher
     SCHOLAR_AVAILABLE = True
 except ImportError:
     SCHOLAR_AVAILABLE = False
@@ -76,7 +76,7 @@ class Paper:
     published: datetime
     categories: List[str]
     primary_category: str
-    arxiv_id: str = ""
+    external_id: str = ""
     citation_count: int = 0
     matched_keywords: List[str] = field(default_factory=list)
     source_block: str = ""  # 来源主题块
@@ -94,7 +94,7 @@ class Paper:
             'published': self.published.strftime('%Y-%m-%d'),
             'categories': self.categories,
             'primary_category': self.primary_category,
-            'arxiv_id': self.arxiv_id,
+            'external_id': self.external_id,
             'citation_count': self.citation_count,
             'matched_keywords': self.matched_keywords,
             'source_block': self.source_block,
@@ -113,18 +113,18 @@ class KeywordBlock:
         self.extended_keywords = extended_keywords
         self.all_keywords = core_keywords + extended_keywords
         
-        # 生成搜索查询
+        # 生成搜索查询（只使用扩展关键词）
         self.search_queries = self._generate_queries()
     
     def _generate_queries(self) -> List[str]:
-        """生成英文搜索查询"""
+        """生成英文搜索查询（只使用扩展关键词）"""
         translations = {
             # AI Agent
             "知识图谱" : "knowledge graph"
         }
         
         queries = set()
-        for kw in self.all_keywords:
+        for kw in self.extended_keywords:
             kw_clean = kw.strip().lower()
             # 移除 ** 标记
             kw_clean = kw_clean.replace('**', '').strip()
@@ -139,8 +139,9 @@ class KeywordBlock:
             elif kw in translations:
                 queries.add(translations[kw])
             elif kw_clean in translations:
-                queries.add(translations[kw_clean])
+                queries.add(translations[kw])
         
+        # 如果没有扩展关键词，使用默认查询
         return list(queries) if queries else ['agent for biology', 'knowledge graph']
 
 
@@ -259,8 +260,8 @@ class CitationFetcher:
         logger.info(f"正在获取 {len(papers)} 篇论文的引用次数...")
         
         for i, paper in enumerate(papers):
-            if paper.arxiv_id:
-                paper.citation_count = self.get_citation_count(paper.arxiv_id)
+            if paper.external_id:
+                paper.citation_count = self.get_citation_count(paper.external_id)
                 if (i + 1) % 10 == 0:
                     logger.info(f"  已处理 {i + 1}/{len(papers)} 篇")
                 import time
@@ -268,86 +269,6 @@ class CitationFetcher:
         
         logger.info("引用次数获取完成")
 
-
-class ArxivSearcher:
-    """arXiv 搜索器"""
-    
-    ARXIV_API_URL = "http://export.arxiv.org/api/query"
-    
-    def __init__(self, max_results_per_query: int = 100, sort_by: str = 'relevance'):
-        self.max_results_per_query = max_results_per_query
-        self.sort_by = sort_by  # 'relevance' 或 'submittedDate'
-    
-    def search(self, query: str, days_back: int = 30) -> List[Paper]:
-        """搜索 arXiv 文章"""
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back)
-        
-        # 根据配置选择排序方式
-        sort_by = getattr(self, 'sort_by', 'relevance')  # 默认按相关性
-        
-        params = {
-            'search_query': f'all:{query}',
-            'start': 0,
-            'max_results': self.max_results_per_query,
-            'sortBy': sort_by,  # 'relevance' 或 'submittedDate'
-            'sortOrder': 'descending'
-        }
-        
-        try:
-            logger.info(f"搜索 arXiv: {query}")
-            response = requests.get(
-                self.ARXIV_API_URL, 
-                params=params, 
-                timeout=30
-            )
-            response.raise_for_status()
-            
-            feed = feedparser.parse(response.content)
-            papers = []
-            
-            for entry in feed.entries:
-                published = datetime.strptime(
-                    entry.published, 
-                    '%Y-%m-%dT%H:%M:%SZ'
-                )
-                
-                if published < start_date:
-                    continue
-                
-                pdf_link = ""
-                for link in entry.links:
-                    if link.get('type') == 'application/pdf':
-                        pdf_link = link.href
-                        break
-                
-                authors = [author.name for author in entry.get('authors', [])]
-                categories = [tag.term for tag in entry.get('tags', [])]
-                primary_cat = entry.get('arxiv_primary_category', {}).get('term', '')
-                
-                arxiv_id = ""
-                if '/abs/' in entry.link:
-                    arxiv_id = entry.link.split('/abs/')[-1].split('v')[0]
-                
-                paper = Paper(
-                    title=entry.title.replace('\n', ' ').strip(),
-                    authors=authors,
-                    summary=entry.summary.replace('\n', ' ').strip(),
-                    link=entry.link,
-                    pdf_link=pdf_link,
-                    published=published,
-                    categories=categories,
-                    primary_category=primary_cat,
-                    arxiv_id=arxiv_id
-                )
-                papers.append(paper)
-            
-            logger.info(f"  找到 {len(papers)} 篇文章")
-            return papers
-            
-        except Exception as e:
-            logger.error(f"搜索失败 '{query}': {e}")
-            return []
 
 
 class ArxivAgent:
@@ -357,7 +278,7 @@ class ArxivAgent:
         self.config = self._load_config(config_file)
         self.keyword_manager = KeywordManager(self.config.get('keywords_file', 'keywords.txt'))
         
-        # 获取搜索源配置（默认 multi，可选 arxiv, semantic_scholar, openalex）
+        # 获取搜索源配置（默认 multi，可选 arxiv, biorxiv, openalex）
         self.search_source = self.config.get('search_source', 'multi')
         logger.info(f"搜索源: {self.search_source}")
         
@@ -374,17 +295,22 @@ class ArxivAgent:
                 max_results_per_query=self.config.get('max_results_per_query', 100),
                 sort_by=sort_by
             )
-        elif SCHOLAR_AVAILABLE and self.search_source in ('multi', 'semantic_scholar', 'openalex'):
+        elif SCHOLAR_AVAILABLE and self.search_source in ('multi', 'biorxiv', 'openalex', 'pubmed'):
             self.multi_searcher = MultiSourceSearcher(
-                semantic_scholar_key=self.config.get('semantic_scholar_key'),
-                openalex_email=self.config.get('openalex_email')
+                openalex_email=self.config.get('openalex_email'),
+                pubmed_email=self.config.get('pubmed_email'),
+                pubmed_api_key=self.config.get('pubmed_api_key'),
+                max_results_per_query=self.config.get('max_results_per_query', 100),
+                sort_by=sort_by
             )
+            logger.info("多源搜索已初始化，包含 arXiv、bioRxiv、OpenAlex 和 PubMed")
         else:
             # 默认使用 arXiv
             self.searcher = ArxivSearcher(
                 max_results_per_query=self.config.get('max_results_per_query', 100),
                 sort_by=sort_by
             )
+            logger.info("使用默认搜索源: arXiv")
         
         self.citation_fetcher = CitationFetcher()
         
@@ -563,7 +489,7 @@ class ArxivAgent:
                 published=sp.published if sp.published else datetime.now(),
                 categories=sp.categories,
                 primary_category=sp.categories[0] if sp.categories else '',
-                arxiv_id=sp.external_id,
+                external_id=sp.external_id,
                 citation_count=sp.citation_count
             )
             converted.append(paper)
@@ -571,7 +497,7 @@ class ArxivAgent:
     
     def _get_paper_id(self, paper: Paper) -> str:
         """生成文章唯一ID"""
-        return paper.arxiv_id if paper.arxiv_id else paper.title[:50]
+        return paper.external_id if paper.external_id else paper.title[:50]
     
     def _keyword_match(self, text: str, keywords: List[str]) -> Tuple[bool, List[str]]:
         """检查文本是否匹配关键词，返回(是否匹配, 匹配的关键词列表)"""
@@ -628,20 +554,35 @@ class ArxivAgent:
             block_papers: List[Paper] = []
             
             for query in block.search_queries:
-                if self.multi_searcher and self.search_source in ('multi', 'semantic_scholar', 'openalex'):
+                if self.multi_searcher and self.search_source in ('multi', 'biorxiv', 'openalex', 'pubmed'):
                     # 使用多源搜索
-                    if self.search_source == 'multi':
-                        papers = self._convert_scholar_papers(
-                            self.multi_searcher.search_and_merge(query, days_back=days_back)
-                        )
-                    elif self.search_source == 'semantic_scholar':
-                        papers = self._convert_scholar_papers(
-                            self.multi_searcher.searchers['semantic_scholar'].search(query, days_back, 50)
-                        )
-                    else:  # openalex
-                        papers = self._convert_scholar_papers(
-                            self.multi_searcher.searchers['openalex'].search(query, days_back, 50)
-                        )
+                    try:
+                        max_results = self.config.get('max_results_per_query', 100)
+                        if self.search_source == 'multi':
+                            papers = self._convert_scholar_papers(
+                                self.multi_searcher.search_and_merge(query, days_back=days_back, max_per_source=max_results)
+                            )
+                            logger.info(f"多源搜索完成，获取到 {len(papers)} 篇文章")
+                        elif self.search_source == 'biorxiv':
+                            papers = self._convert_scholar_papers(
+                                self.multi_searcher.searchers['biorxiv'].search(query, days_back, max_results)
+                            )
+                            logger.info(f"bioRxiv 搜索完成，获取到 {len(papers)} 篇文章")
+                        elif self.search_source == 'pubmed':
+                            papers = self._convert_scholar_papers(
+                                self.multi_searcher.searchers['pubmed'].search(query, days_back, max_results)
+                            )
+                            logger.info(f"PubMed 搜索完成，获取到 {len(papers)} 篇文章")
+                        else:  # openalex
+                            papers = self._convert_scholar_papers(
+                                self.multi_searcher.searchers['openalex'].search(query, days_back, max_results)
+                            )
+                            logger.info(f"OpenAlex 搜索完成，获取到 {len(papers)} 篇文章")
+                    except Exception as e:
+                        logger.error(f"多源搜索失败: {e}")
+                        # 回退到 arXiv 搜索
+                        logger.info("回退到 arXiv 搜索")
+                        papers = self.searcher.search(query, days_back=days_back)
                 else:
                     # 使用 arXiv 搜索
                     papers = self.searcher.search(query, days_back=days_back)
@@ -740,24 +681,46 @@ class ArxivAgent:
             logger.info("开始使用 LLM 进行相关性筛选...")
             logger.info(f"{'='*60}")
             
-            # 获取所有关键词
-            all_keywords = []
-            for block in self.keyword_manager.blocks:
-                all_keywords.extend(block.all_keywords)
-            
             llm_config = self.config.get('llm', {})
             min_score = llm_config.get('min_score', 5.0)
             top_n = llm_config.get('top_n')
             
             logger.info(f"LLM 筛选配置: 最低分数={min_score}, 最多选取={top_n or '不限'}")
             
-            all_selected_papers = self.llm_filter.filter_papers(
-                all_selected_papers,
-                all_keywords,
-                min_score=min_score,
-                top_n=top_n
-            )
+            # 按主题分组论文
+            block_papers = defaultdict(list)
+            for paper in all_selected_papers:
+                block_papers[paper.source_block].append(paper)
             
+            # 为每个主题单独使用其关键词进行筛选
+            filtered_papers = []
+            for block_name, papers in block_papers.items():
+                # 找到对应的关键词块
+                block_keywords = []
+                for block in self.keyword_manager.blocks:
+                    if block.name == block_name:
+                        block_keywords = block.all_keywords
+                        break
+                
+                if not block_keywords:
+                    logger.warning(f"主题 '{block_name}' 未找到对应的关键词")
+                    continue
+                
+                logger.info(f"筛选主题 '{block_name}' 的 {len(papers)} 篇论文...")
+                logger.info(f"使用关键词: {block_keywords[:5]}...")
+                
+                # 对该主题的论文进行筛选
+                filtered_block_papers = self.llm_filter.filter_papers(
+                    papers,
+                    block_keywords,
+                    min_score=min_score,
+                    top_n=top_n
+                )
+                
+                filtered_papers.extend(filtered_block_papers)
+                logger.info(f"主题 '{block_name}' 筛选后剩余 {len(filtered_block_papers)} 篇文章")
+            
+            all_selected_papers = filtered_papers
             logger.info(f"LLM 筛选后剩余 {len(all_selected_papers)} 篇文章")
         
         # 处理PDF读取和论文总结
@@ -860,28 +823,58 @@ class ArxivAgent:
         logger.info(f"开始处理 {len(papers)} 篇论文的PDF和总结...")
         logger.info(f"{'='*60}")
         
-        # 获取所有关键词
-        all_keywords = []
-        for block in self.keyword_manager.blocks:
-            all_keywords.extend(block.all_keywords)
+        # 按主题分组论文
+        block_papers = defaultdict(list)
+        for paper in papers:
+            block_papers[paper.source_block].append(paper)
         
         processed_papers = []
-        for i, paper in enumerate(papers, 1):
-            logger.info(f"处理第 {i}/{len(papers)} 篇: {paper.title[:50]}...")
+        for block_name, block_papers_list in block_papers.items():
+            # 找到对应的关键词块
+            block_keywords = []
+            for block in self.keyword_manager.blocks:
+                if block.name == block_name:
+                    block_keywords = block.all_keywords
+                    break
             
-            try:
-                # 读取PDF全文
-                if paper.pdf_link:
-                    full_text = self.pdf_reader.get_pdf_text(paper.pdf_link)
-                    if full_text:
-                        paper.full_text = full_text
-                        logger.info(f"  PDF 读取成功，长度: {len(full_text)} 字符")
-                        
-                        # 生成总结
+            if not block_keywords:
+                logger.warning(f"主题 '{block_name}' 未找到对应的关键词")
+                processed_papers.extend(block_papers_list)
+                continue
+            
+            logger.info(f"处理主题 '{block_name}' 的 {len(block_papers_list)} 篇论文...")
+            logger.info(f"使用关键词: {block_keywords[:5]}...")
+            
+            for i, paper in enumerate(block_papers_list, 1):
+                logger.info(f"处理第 {i}/{len(block_papers_list)} 篇: {paper.title[:50]}...")
+                
+                try:
+                    # 读取PDF全文
+                    text_for_summary = None
+                    summary_source = ""
+                    
+                    if paper.pdf_link:
+                        full_text = self.pdf_reader.get_pdf_text(paper.pdf_link)
+                        if full_text:
+                            paper.full_text = full_text
+                            text_for_summary = full_text
+                            summary_source = "full_text"
+                            logger.info(f"  PDF 读取成功，长度: {len(full_text)} 字符")
+                        else:
+                            logger.warning("  PDF 读取失败，使用摘要进行总结")
+                            text_for_summary = paper.summary
+                            summary_source = "abstract"
+                    else:
+                        logger.warning("  没有PDF链接，使用摘要进行总结")
+                        text_for_summary = paper.summary
+                        summary_source = "abstract"
+                    
+                    # 生成总结
+                    if text_for_summary:
                         summary_result = self.paper_summarizer.summarize_paper(
                             paper.title, 
-                            full_text, 
-                            all_keywords
+                            text_for_summary, 
+                            block_keywords
                         )
                         if summary_result:
                             paper.paper_summary = {
@@ -890,25 +883,22 @@ class ArxivAgent:
                                 'methodology': summary_result.methodology,
                                 'conclusions': summary_result.conclusions,
                                 'limitations': summary_result.limitations,
-                                'score': summary_result.score
+                                'score': summary_result.score,
+                                'summary_source': summary_source
                             }
-                            logger.info(f"  论文总结生成成功，评分: {summary_result.score:.1f}/10")
+                            logger.info(f"  论文总结生成成功，评分: {summary_result.score:.1f}/10，基于: {summary_source}")
                         else:
                             logger.warning("  论文总结生成失败")
-                    else:
-                        logger.warning("  PDF 读取失败")
-                else:
-                    logger.warning("  没有PDF链接")
+                    
+                    processed_papers.append(paper)
+                    
+                except Exception as e:
+                    logger.error(f"  处理失败: {e}")
+                    processed_papers.append(paper)
                 
-                processed_papers.append(paper)
-                
-            except Exception as e:
-                logger.error(f"  处理失败: {e}")
-                processed_papers.append(paper)
-            
-            # 延迟，避免API限制
-            import time
-            time.sleep(1)
+                # 延迟，避免API限制
+                import time
+                time.sleep(1)
         
         logger.info(f"PDF和总结处理完成，共处理 {len(processed_papers)} 篇论文")
         return processed_papers
@@ -944,8 +934,11 @@ class ArxivAgent:
             f.write(f"> **摘要**: {summary}\n\n")
             
             # 显示论文总结
-            if paper.paper_summary:
+            if hasattr(paper, 'paper_summary') and paper.paper_summary:
                 f.write("### 📝 论文总结\n\n")
+                summary_source = paper.paper_summary.get('summary_source', 'unknown')
+                if summary_source == 'abstract':
+                    f.write(f"> 📌 **总结基于摘要** - PDF 不可下载或读取失败\n\n")
                 f.write(f"> {paper.paper_summary.get('summary', '')}\n\n")
                 
                 key_points = paper.paper_summary.get('key_points', [])

@@ -6,7 +6,7 @@
 
 ## 🌟 功能特点
 
-- 🔍 **智能搜索**：根据关键词文件自动搜索相关论文，支持 arXiv、Semantic Scholar、OpenAlex 多源搜索
+- 🔍 **智能搜索**：根据关键词文件自动搜索相关论文，支持 arXiv、bioRxiv、OpenAlex 多源搜索
 - 🎯 **关键词过滤**：搜索后自动过滤，只保留标题/摘要中包含核心关键词的文章
 - 📊 **引用排序**：按引用次数排序，优先推送高影响力文章
 - 🤖 **LLM 智能筛选**：使用大模型（GPT/DeepSeek/阿里云等）判断论文与关键词的真实相关性，过滤不相关文章
@@ -157,7 +157,7 @@ llm:
 ## 🔍 搜索源配置
 
 ```yaml
-# 搜索源: multi(多源), arxiv, semantic_scholar, openalex
+# 搜索源: multi(多源), arxiv, biorxiv, openalex
 search_source: multi
 
 # 排序方式: relevance(相关性), submittedDate(最新)

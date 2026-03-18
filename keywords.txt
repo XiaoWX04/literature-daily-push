@@ -1,4 +1,36 @@
-1. prompt engineering
-** chain-of-thought **
-** prompt evaluation **
+1. LLM Agent for Biology / Bioinformatics
+**agent**
+**bio**
+**extract**
+AI agent
+Literature mining
+text mining
+literature LLM
+literature extract
+text extract
 
+2. Knowledge Graph & Biological Data Integration
+**KG**
+**Knowledge graph**
+**NER**
+Entity-relation extraction
+Named Entity Recognition (NER)
+Biological triplet extraction
+Graph construction
+knowledge graph
+
+3. Prompt Engineering & Optimization
+**prompt**
+Prompt evaluation
+In-context learning
+Prompt optimization
+self reflection
+self correction
+prompt engineering
+
+4. Advanced Model Frameworks & Generative AI
+**diffusion**
+diffusion model
+Generative AI
+multi-modality
+Foundation models

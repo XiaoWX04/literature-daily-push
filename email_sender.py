@@ -212,6 +212,9 @@ class EmailSender:
                 summary_html = ''
                 if hasattr(paper, 'paper_summary') and paper.paper_summary:
                     summary_html = '<div class="summary" style="margin-top: 10px;"><strong>📝 论文总结:</strong><br>'
+                    summary_source = paper.paper_summary.get('summary_source', 'unknown')
+                    if summary_source == 'abstract':
+                        summary_html += '<span style="color: #ff6b6b; font-weight: 600;">📌 总结基于摘要 - PDF 不可下载或读取失败</span><br><br>'
                     summary_html += paper.paper_summary.get('summary', '') + '<br>'
                     
                     key_points = paper.paper_summary.get('key_points', [])
