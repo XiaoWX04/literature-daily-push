@@ -33,7 +33,7 @@
 
 ---
 
-## �🚀 快速开始（二选一）
+## � 快速开始（二选一）
 
 ### 方式一：GitHub Actions 云端部署（推荐 ⭐）
 
@@ -252,6 +252,10 @@ python test_email.py
 - **v1.2**: 新增 GitHub Actions 云端部署支持
 - **v1.1**: 新增邮件推送功能
 - **v1.0**: 初始版本
+
+## 📄 许可证
+
+本项目基于 [arxiv-daily-push](https://github.com/chenyu2001819-jpg/arxiv-daily-push) 开发，基于 MIT 协议开源。
 
 ---
 
