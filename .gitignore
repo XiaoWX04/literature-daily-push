@@ -49,6 +49,7 @@ logs/
 local_config.yaml
 my_config.yaml
 config.yaml  # 包含邮箱密码等敏感信息，使用 config.example.yaml 作为模板
+paper_history.json
 
 # Daily papers (optional - uncomment if you don't want to commit reports)
 daily_papers/

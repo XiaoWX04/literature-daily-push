@@ -854,41 +854,66 @@ class ArxivAgent:
                     summary_source = ""
                     
                     if paper.pdf_link:
-                        full_text = self.pdf_reader.get_pdf_text(paper.pdf_link)
-                        if full_text:
-                            paper.full_text = full_text
-                            text_for_summary = full_text
-                            summary_source = "full_text"
-                            logger.info(f"  PDF 读取成功，长度: {len(full_text)} 字符")
-                        else:
-                            logger.warning("  PDF 读取失败，使用摘要进行总结")
-                            text_for_summary = paper.summary
+                        try:
+                            full_text = self.pdf_reader.get_pdf_text(paper.pdf_link)
+                            if full_text:
+                                paper.full_text = full_text
+                                text_for_summary = full_text
+                                summary_source = "full_text"
+                                logger.info(f"  PDF 读取成功，长度: {len(full_text)} 字符")
+                            else:
+                                logger.warning("  PDF 读取失败，使用摘要进行总结")
+                                text_for_summary = paper.summary or paper.title
+                                summary_source = "abstract"
+                        except Exception as e:
+                            logger.warning(f"  PDF 读取异常: {e}，使用摘要进行总结")
+                            text_for_summary = paper.summary or paper.title
                             summary_source = "abstract"
                     else:
                         logger.warning("  没有PDF链接，使用摘要进行总结")
-                        text_for_summary = paper.summary
+                        text_for_summary = paper.summary or paper.title
                         summary_source = "abstract"
                     
                     # 生成总结
                     if text_for_summary:
-                        summary_result = self.paper_summarizer.summarize_paper(
-                            paper.title, 
-                            text_for_summary, 
-                            block_keywords
-                        )
-                        if summary_result:
+                        try:
+                            summary_result = self.paper_summarizer.summarize_paper(
+                                paper.title, 
+                                text_for_summary, 
+                                block_keywords
+                            )
+                            if summary_result:
+                                paper.paper_summary = {
+                                    'summary': summary_result.summary,
+                                    'key_points': summary_result.key_points,
+                                    'methodology': summary_result.methodology,
+                                    'conclusions': summary_result.conclusions,
+                                    'limitations': summary_result.limitations,
+                                    'score': summary_result.score,
+                                    'summary_source': summary_source
+                                }
+                                logger.info(f"  论文总结生成成功，评分: {summary_result.score:.1f}/10，基于: {summary_source}")
+                            else:
+                                logger.warning("  论文总结生成失败")
+                                # 确保 paper_summary 至少包含来源信息
+                                paper.paper_summary = {
+                                    'summary': '无法生成总结',
+                                    'summary_source': summary_source
+                                }
+                        except Exception as e:
+                            logger.error(f"  总结生成异常: {e}")
+                            # 确保 paper_summary 至少包含来源信息
                             paper.paper_summary = {
-                                'summary': summary_result.summary,
-                                'key_points': summary_result.key_points,
-                                'methodology': summary_result.methodology,
-                                'conclusions': summary_result.conclusions,
-                                'limitations': summary_result.limitations,
-                                'score': summary_result.score,
+                                'summary': f'总结生成失败: {str(e)}',
                                 'summary_source': summary_source
                             }
-                            logger.info(f"  论文总结生成成功，评分: {summary_result.score:.1f}/10，基于: {summary_source}")
-                        else:
-                            logger.warning("  论文总结生成失败")
+                    else:
+                        logger.warning("  没有文本可用于总结")
+                        # 确保 paper_summary 至少包含来源信息
+                        paper.paper_summary = {
+                            'summary': '没有文本可用于总结',
+                            'summary_source': 'none'
+                        }
                     
                     processed_papers.append(paper)
                     
@@ -928,9 +953,8 @@ class ArxivAgent:
                 f.write(f" | [PDF]({paper.pdf_link})")
             f.write("\n\n")
             
-            summary = paper.summary[:600]
-            if len(paper.summary) > 600:
-                summary += "..."
+            # 完整显示摘要，不截断
+            summary = paper.summary
             f.write(f"> **摘要**: {summary}\n\n")
             
             # 显示论文总结
