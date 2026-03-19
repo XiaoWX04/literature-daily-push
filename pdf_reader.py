@@ -17,10 +17,20 @@ logger = logging.getLogger(__name__)
 class PDFReader:
     """PDF 读取器"""
     
-    def __init__(self, timeout: int = 30, max_retries: int = 3):
+    def __init__(self, timeout: int = 30, max_retries: int = 3, retry_delay: float = 2.0):
         self.timeout = timeout
         self.max_retries = max_retries
+        self.retry_delay = retry_delay
         self.session = requests.Session()
+        # 添加浏览器头信息，减少被拒绝的可能性
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        })
     
     def download_pdf(self, pdf_url: str) -> Optional[str]:
         """
@@ -32,6 +42,8 @@ class PDFReader:
         Returns:
             临时文件路径，如果下载失败则返回 None
         """
+        import time
+        
         if not pdf_url:
             logger.warning("PDF URL 为空")
             return None
@@ -41,6 +53,16 @@ class PDFReader:
         for attempt in range(self.max_retries):
             try:
                 response = self.session.get(pdf_url, timeout=self.timeout)
+                
+                # 检查 HTTP 状态码
+                if response.status_code == 403:
+                    logger.warning(f"PDF 下载被拒绝 (403 Forbidden): {pdf_url}")
+                    logger.info("403 错误通常是服务器访问限制，不再重试")
+                    return None
+                elif response.status_code == 404:
+                    logger.warning(f"PDF 文件不存在 (404 Not Found): {pdf_url}")
+                    return None
+                
                 response.raise_for_status()
                 
                 # 检查是否是 PDF 文件
@@ -57,11 +79,30 @@ class PDFReader:
                 logger.info(f"PDF 下载成功: {temp_path}")
                 return temp_path
                 
-            except Exception as e:
-                logger.warning(f"第 {attempt + 1} 次下载失败: {e}")
-                if attempt < self.max_retries - 1:
-                    continue
+            except requests.exceptions.HTTPError as e:
+                # HTTP 错误通常不需要重试
+                logger.warning(f"HTTP 错误: {e}")
                 return None
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout) as e:
+                # 网络错误，进行重试
+                if attempt < self.max_retries - 1:
+                    backoff_time = self.retry_delay * (2 ** attempt)  # 指数退避
+                    logger.warning(f"第 {attempt + 1} 次下载失败 (网络错误): {e}")
+                    logger.info(f"{backoff_time:.1f} 秒后重试...")
+                    time.sleep(backoff_time)
+                else:
+                    logger.error(f"PDF 下载失败 (已达到最大重试次数): {e}")
+                    return None
+            except Exception as e:
+                # 其他错误，进行重试
+                if attempt < self.max_retries - 1:
+                    backoff_time = self.retry_delay * (2 ** attempt)  # 指数退避
+                    logger.warning(f"第 {attempt + 1} 次下载失败: {e}")
+                    logger.info(f"{backoff_time:.1f} 秒后重试...")
+                    time.sleep(backoff_time)
+                else:
+                    logger.error(f"PDF 下载失败 (已达到最大重试次数): {e}")
+                    return None
     
     def extract_text_from_pdf(self, pdf_path: str) -> Optional[str]:
         """

@@ -73,38 +73,60 @@ class LLMClient:
         Returns:
             模型响应文本
         """
-        try:
-            url = self._get_api_url()
-            
-            # 使用默认系统提示如果没有提供
-            if not system_prompt:
-                system_prompt = '你是一个学术论文分析专家，擅长判断论文与特定研究领域的相关性。'
-            
-            # 判断 API 类型，构建对应的 payload 和 headers
-            if 'generativelanguage.googleapis.com' in url:
-                # Gemini API 格式
-                return self._call_gemini(url, prompt, system_prompt)
-            elif 'anthropic.com' in url:
-                # Claude API 格式
-                return self._call_claude(url, prompt, system_prompt)
-            elif 'minimax.chat' in url:
-                # MiniMax API 格式
-                return self._call_minimax(url, prompt, system_prompt)
-            else:
-                # OpenAI 兼容格式
-                return self._call_openai_compatible(url, prompt, system_prompt)
-            
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"LLM API HTTP 错误: {e}")
-            if e.response is not None:
-                logger.error(f"响应状态码: {e.response.status_code}")
-                logger.error(f"响应内容: {e.response.text[:500]}")
-            return ''
-        except Exception as e:
-            logger.error(f"LLM API 调用失败: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return ''
+        import time
+        
+        # 使用默认系统提示如果没有提供
+        if not system_prompt:
+            system_prompt = '你是一个学术论文分析专家，擅长判断论文与特定研究领域的相关性。'
+        
+        # 重试机制
+        for attempt in range(self.max_retries + 1):
+            try:
+                url = self._get_api_url()
+                
+                # 判断 API 类型，构建对应的 payload 和 headers
+                if 'generativelanguage.googleapis.com' in url:
+                    # Gemini API 格式
+                    return self._call_gemini(url, prompt, system_prompt)
+                elif 'anthropic.com' in url:
+                    # Claude API 格式
+                    return self._call_claude(url, prompt, system_prompt)
+                elif 'minimax.chat' in url:
+                    # MiniMax API 格式
+                    return self._call_minimax(url, prompt, system_prompt)
+                else:
+                    # OpenAI 兼容格式
+                    return self._call_openai_compatible(url, prompt, system_prompt)
+                
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout) as e:
+                if attempt < self.max_retries:
+                    backoff_time = self.delay * (2 ** attempt)  # 指数退避
+                    logger.warning(f"LLM API 网络错误 (尝试 {attempt+1}/{self.max_retries+1}): {e}")
+                    logger.info(f"{backoff_time:.1f} 秒后重试...")
+                    time.sleep(backoff_time)
+                else:
+                    logger.error(f"LLM API 网络错误 (已达到最大重试次数): {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    return ''
+            except requests.exceptions.HTTPError as e:
+                # HTTP 错误通常不需要重试（如 401, 403, 404 等）
+                logger.error(f"LLM API HTTP 错误: {e}")
+                if e.response is not None:
+                    logger.error(f"响应状态码: {e.response.status_code}")
+                    logger.error(f"响应内容: {e.response.text[:500]}")
+                return ''
+            except Exception as e:
+                if attempt < self.max_retries:
+                    backoff_time = self.delay * (2 ** attempt)  # 指数退避
+                    logger.warning(f"LLM API 调用失败 (尝试 {attempt+1}/{self.max_retries+1}): {e}")
+                    logger.info(f"{backoff_time:.1f} 秒后重试...")
+                    time.sleep(backoff_time)
+                else:
+                    logger.error(f"LLM API 调用失败 (已达到最大重试次数): {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    return ''
     
     def _call_openai_compatible(self, url: str, prompt: str, system_prompt: str) -> str:
         """调用 OpenAI 兼容格式的 API"""
@@ -164,7 +186,10 @@ class LLMClient:
             'Content-Type': 'application/json'
         }
         
-        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        # 使用会话对象发送请求
+        session = requests.Session()
+        session.headers.update(headers)
+        response = session.post(url, json=payload, timeout=60)
         response.raise_for_status()
         
         result = response.json()
@@ -199,7 +224,10 @@ class LLMClient:
             'anthropic-version': '2023-06-01'
         }
         
-        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        # 使用会话对象发送请求
+        session = requests.Session()
+        session.headers.update(headers)
+        response = session.post(url, json=payload, timeout=60)
         response.raise_for_status()
         
         result = response.json()
@@ -229,7 +257,10 @@ class LLMClient:
             'max_tokens': self.config.max_tokens
         }
         
-        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        # 使用会话对象发送请求
+        session = requests.Session()
+        session.headers.update(headers)
+        response = session.post(url, json=payload, timeout=60)
         response.raise_for_status()
         
         result = response.json()
